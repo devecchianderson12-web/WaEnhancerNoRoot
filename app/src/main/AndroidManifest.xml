@@ -107,6 +107,32 @@
             android:name=".noroot.InstallResultReceiver"
             android:exported="false" />
 
+        <!-- No patch mode: works next to the official WhatsApp -->
+        <activity
+            android:name=".nopatch.NoPatchActivity"
+            android:theme="@style/AppTheme"
+            android:parentActivityName=".activities.MainActivity" />
+
+        <activity
+            android:name=".nopatch.MessagesActivity"
+            android:theme="@style/AppTheme"
+            android:parentActivityName=".nopatch.NoPatchActivity" />
+
+        <activity
+            android:name=".nopatch.StatusesActivity"
+            android:theme="@style/AppTheme"
+            android:parentActivityName=".nopatch.NoPatchActivity" />
+
+        <service
+            android:name=".nopatch.WaNotificationListener"
+            android:exported="true"
+            android:label="@string/nopatch_listener_label"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
         <activity
             android:name=".activities.ForceStartActivity"
             android:excludeFromRecents="true"

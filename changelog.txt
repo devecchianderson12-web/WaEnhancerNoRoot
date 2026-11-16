@@ -1,3 +1,9 @@
+[SIN PARCHE]
+* Nuevo modo sin parche: funciona con el WhatsApp oficial instalado, sin reinstalarlo ni parchearlo, y WhatsApp se sigue actualizando desde Play Store
+* Lee los mensajes desde las notificaciones sin enviar las tildes azules
+* Guarda los mensajes eliminados y editados, y avisa cuando pasa
+* Guarda en la galería los estados que WhatsApp ya descargó
+
 [SIN ROOT]
 * Nuevo modo sin root: la app parchea WhatsApp / WhatsApp Business en el propio celular (motor LSPatch + LSPlant) e integra el módulo, así todas las funciones funcionan sin root ni LSPosed
 * Acepta la app instalada o un APK / APKS / XAPK / APKM elegido a mano
