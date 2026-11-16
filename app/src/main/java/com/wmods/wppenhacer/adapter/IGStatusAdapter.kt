@@ -1,0 +1,392 @@
+package com.wmods.wppenhacer.adapter
+
+import android.annotation.SuppressLint
+import android.content.Context
+import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.BitmapDrawable
+import android.os.SystemClock
+import android.text.TextUtils
+import android.util.LruCache
+import android.util.TypedValue
+import android.view.Gravity
+import android.view.View
+import android.view.ViewGroup
+import android.widget.FrameLayout
+import android.widget.ImageView
+import android.widget.LinearLayout
+import android.widget.RelativeLayout
+import android.widget.TextView
+import androidx.recyclerview.widget.DiffUtil
+import androidx.recyclerview.widget.RecyclerView
+import com.wmods.wppenhacer.R
+import com.wmods.wppenhacer.views.dialog.TabDialogContent
+import com.wmods.wppenhacer.xposed.core.WppCore
+import com.wmods.wppenhacer.xposed.core.WppCore.getCurrentActivity
+import com.wmods.wppenhacer.xposed.core.WppCore.getMyPhoto
+import com.wmods.wppenhacer.xposed.core.components.FMessageWpp.UserJid
+import com.wmods.wppenhacer.xposed.core.components.WaContactWpp
+import com.wmods.wppenhacer.xposed.core.devkit.Unobfuscator.findFirstClassUsingName
+import com.wmods.wppenhacer.xposed.core.devkit.Unobfuscator.getClassByName
+import com.wmods.wppenhacer.xposed.core.devkit.UnobfuscatorCache.Companion.getInstance
+import com.wmods.wppenhacer.xposed.utils.DesignUtils.coloredDrawable
+import com.wmods.wppenhacer.xposed.utils.DesignUtils.generatePrimaryColorDrawable
+import com.wmods.wppenhacer.xposed.utils.DesignUtils.getDrawable
+import com.wmods.wppenhacer.xposed.utils.DesignUtils.getDrawableByName
+import com.wmods.wppenhacer.xposed.utils.DesignUtils.getIconByName
+import com.wmods.wppenhacer.xposed.utils.DesignUtils.getUnSeenColor
+import com.wmods.wppenhacer.xposed.utils.DesignUtils.isNightMode
+import com.wmods.wppenhacer.xposed.utils.ReflectionUtils
+import com.wmods.wppenhacer.xposed.utils.ReflectionUtils.findMethodUsingFilter
+import com.wmods.wppenhacer.xposed.utils.ReflectionUtils.getFieldByExtendType
+import com.wmods.wppenhacer.xposed.utils.ReflectionUtils.getObjectField
+import com.wmods.wppenhacer.xposed.utils.Utils.application
+import com.wmods.wppenhacer.xposed.utils.Utils.dipToPixels
+import com.wmods.wppenhacer.xposed.utils.Utils.showToast
+import com.wmods.wppenhacer.xposed.utils.YukiLog
+import org.luckypray.dexkit.query.enums.StringMatchType
+import java.lang.reflect.Method
+import androidx.core.graphics.drawable.toDrawable
+
+@Suppress("TYPE_MISMATCH_BASED_ON_JAVA_ANNOTATIONS")
+class IGStatusAdapter(val context: Context, private val statusInfoClazz: Class<*>) :
+    RecyclerView.Adapter<IGStatusAdapter.IGStatusViewHolder>() {
+    private val items = ArrayList<Any?>()
+    private var clazzImageStatus: Class<*> = findFirstClassUsingName(
+        this.context.classLoader,
+        StringMatchType.EndsWith,
+        ".ContactStatusThumbnail"
+    )
+    private val setCountStatus: Method?
+
+    fun submitList(newItems: List<Any?>) {
+        val result = DiffUtil.calculateDiff(StatusDiffCallback(items, newItems))
+        items.clear()
+        items.addAll(newItems)
+        result.dispatchUpdatesTo(this)
+    }
+
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): IGStatusViewHolder {
+        return createLayoutStatus()
+    }
+
+    override fun onBindViewHolder(holder: IGStatusViewHolder, position: Int) {
+        val item = items[position]
+        if (item == null) {
+            holder.setInfo("my_status")
+            holder.addButton.visibility = View.VISIBLE
+        } else if (statusInfoClazz.isInstance(item)) {
+            if (item is View) {
+                item.isClickable = false
+            }
+            holder.setInfo(item)
+            holder.addButton.visibility = View.GONE
+        }
+        holder.itemView.setOnClickListener {
+            if (holder.myStatus) {
+                val activity = getCurrentActivity()
+                val dialog = WppCore.createBottomDialog(activity!!)
+                val tabdialog = TabDialogContent(activity)
+                tabdialog.setTitle(activity.getString(R.string.select_status_type))
+                tabdialog.addTab(
+                    getInstance().getString("mystatus"),
+                    getIconByName("ic_status", true)
+                )
+                {
+                    try {
+                        val clazz =
+                            getClassByName("MyStatusesActivity", context.classLoader)
+                        val intent = Intent(getCurrentActivity(), clazz)
+                        getCurrentActivity()!!.startActivity(intent)
+                    } catch (e: Exception) {
+                        showToast(e.message, 1)
+                    }
+                    dialog.dismissDialog()
+                }
+
+                // Botão da camera
+                val iconCamera = getDrawable(R.drawable.camera)
+                coloredDrawable(iconCamera, if (isNightMode()) Color.WHITE else Color.BLACK)
+                tabdialog.addTab(
+                    activity.getString(R.string.open_camera),
+                    iconCamera
+                ) {
+                    try {
+                        val intent = Intent()
+                        val clazz =
+                            getClassByName("CameraActivity", context.classLoader)
+                        intent.setClassName(activity.packageName, clazz.name)
+                        intent.putExtra("jid", "status@broadcast")
+                        intent.putExtra("camera_origin", 4)
+                        intent.putExtra("is_coming_from_chat", false)
+                        intent.putExtra("media_sharing_user_journey_origin", 32)
+                        intent.putExtra("media_sharing_user_journey_start_target", 9)
+                        intent.putExtra("media_sharing_user_journey_chat_type", 4)
+                        activity.startActivity(intent)
+                    } catch (e: Exception) {
+                        showToast(e.message, 1)
+                    }
+                    dialog.dismissDialog()
+                }
+                // Botão de editar
+                val iconEdit = getDrawable(R.drawable.edit2)
+                coloredDrawable(iconEdit, if (isNightMode()) Color.WHITE else Color.BLACK)
+
+                tabdialog.addTab(
+                    activity.getString(R.string.edit_text),
+                    iconEdit
+                ) {
+                    try {
+                        val intent = Intent()
+                        var clazz: Class<*>?
+                        try {
+                            clazz = getClassByName(
+                                "TextStatusComposerActivity",
+                                activity.classLoader
+                            )
+                        } catch (_: Exception) {
+                            clazz = getClassByName(
+                                "ConsolidatedStatusComposerActivity",
+                                context.classLoader
+                            )
+                            intent.putExtra("status_composer_mode", 2)
+                        }
+                        intent.setClassName(activity.packageName, clazz.name)
+                        activity.startActivity(intent)
+                    } catch (e: Exception) {
+                        showToast(e.message, 1)
+                    }
+                    dialog.dismissDialog()
+                }
+                dialog.setContentView(tabdialog)
+                dialog.showDialog()
+                return@setOnClickListener
+            }
+            try {
+                val clazz = getClassByName("StatusPlaybackActivity", context.classLoader)
+                val intent = Intent(getCurrentActivity(), clazz)
+                intent.putExtra("jid", holder.userJid!!.phoneRawString)
+                getCurrentActivity()!!.startActivity(intent)
+            } catch (e: Exception) {
+                showToast(e.message, 1)
+            }
+        }
+    }
+
+    init {
+        this.clazzImageStatus = findFirstClassUsingName(
+            context.classLoader,
+            StringMatchType.EndsWith,
+            ".ContactStatusThumbnail"
+        )
+        this.setCountStatus = findMethodUsingFilter(this.clazzImageStatus) { m: Method? ->
+            m!!.parameterCount == 3 && arrayOf<Class<*>>(
+                Int::class.javaPrimitiveType!!,
+                Int::class.javaPrimitiveType!!,
+                Int::class.javaPrimitiveType!!
+            ).contentEquals(m.parameterTypes)
+        }
+    }
+
+    companion object {
+        private const val MY_PHOTO_KEY = "my_status"
+        private const val PHOTO_TTL_MS = 5 * 60 * 1000L
+
+        private class CachedPhoto(val bitmap: Bitmap?, val loadedAt: Long)
+
+        private val photoCache = LruCache<String, CachedPhoto>(64)
+
+        private fun cachedPhoto(key: String, load: () -> Bitmap?): Bitmap? {
+            val now = SystemClock.elapsedRealtime()
+            photoCache.get(key)?.takeIf { now - it.loadedAt < PHOTO_TTL_MS }?.let { return it.bitmap }
+            return load().also { photoCache.put(key, CachedPhoto(it, now)) }
+        }
+    }
+
+    override fun getItemCount(): Int = items.size
+
+    inner class IGStatusViewHolder(
+        root: View,
+        private val igStatusContactPhoto: ImageView,
+        val addButton: RelativeLayout,
+        private val igStatusContactName: TextView
+    ) : RecyclerView.ViewHolder(root) {
+        var myStatus: Boolean = false
+        var userJid: UserJid? = null
+
+        fun setInfo(item: Any?) {
+            if (item == "my_status") {
+                myStatus = true
+                igStatusContactName.text = getInstance().getString("mystatus")
+                val photo = cachedPhoto(MY_PHOTO_KEY) { (getMyPhoto() as? BitmapDrawable)?.bitmap }
+                setPhoto(photo)
+                setCountStatus(0, 0)
+                return
+            }
+            myStatus = false
+            try {
+                val statusInfo =
+                    ReflectionUtils.getObjectField(item, "A01").takeUnless { it is Number }
+                        ?: ReflectionUtils.getObjectField(item, "A02")
+
+                val classJid = findFirstClassUsingName(
+                    statusInfoClazz.classLoader,
+                    StringMatchType.EndsWith,
+                    "jid.Jid"
+                )
+                val field = getFieldByExtendType(statusInfo!!.javaClass, classJid)
+                this.userJid = UserJid(getObjectField(field, statusInfo))
+                val waContact = WaContactWpp.getWaContactFromJid(this.userJid!!)
+                val contactName = waContact!!.displayName
+                igStatusContactName.text = contactName
+                val jidKey = userJid!!.phoneRawString ?: userJid!!.userRawString
+                val loadPhoto = {
+                    waContact.getProfilePhoto(false)?.use { BitmapFactory.decodeStream(it) }
+                }
+                setPhoto(if (jidKey != null) cachedPhoto(jidKey, loadPhoto) else loadPhoto())
+                val countUnseen = ReflectionUtils.getIntField(statusInfo, "A01")
+                val total = ReflectionUtils.getIntField(statusInfo, "A00")
+                setCountStatus(countUnseen, total)
+            } catch (e: Exception) {
+                YukiLog.log(e)
+            }
+        }
+
+        private fun setPhoto(photo: Bitmap?) {
+            igStatusContactPhoto.setImageDrawable(
+                photo?.toDrawable(context.resources)
+                    ?: application.getDrawable(R.drawable.user_foreground)
+            )
+        }
+
+        fun setCountStatus(countUnseen: Int, total: Int) {
+            if (setCountStatus != null) {
+                try {
+                    setCountStatus.invoke(igStatusContactPhoto, total, countUnseen, total)
+                } catch (e: Exception) {
+                    YukiLog.log(e)
+                }
+            }
+        }
+    }
+
+    @SuppressLint("SetTextI18n")
+    private fun createLayoutStatus(): IGStatusViewHolder {
+        val relativeLayout = RelativeLayout(this.context)
+        val relativeParams =
+            RelativeLayout.LayoutParams(dipToPixels(86), ViewGroup.LayoutParams.WRAP_CONTENT)
+        relativeLayout.layoutParams = relativeParams
+
+        // Criando o FrameLayout
+        val frameLayout = FrameLayout(this.context)
+        frameLayout.layoutParams =
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+
+        // Criando o LinearLayout
+        val linearLayout = LinearLayout(this.context)
+        val linearParams = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        )
+        linearLayout.orientation = LinearLayout.VERTICAL
+        linearLayout.layoutParams = linearParams
+
+        // Criando o RelativeLayout interno
+        val internalRelativeLayout = RelativeLayout(this.context)
+        val internalRelativeParams = RelativeLayout.LayoutParams(dipToPixels(64), dipToPixels(64))
+        internalRelativeLayout.layoutParams = internalRelativeParams
+
+        // Adicionando os elementos ao RelativeLayout interno
+        val contactPhoto =
+            ReflectionUtils.newInstance(this.clazzImageStatus, this.context) as ImageView
+        val photoParams = RelativeLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT
+        )
+        contactPhoto.layoutParams = photoParams
+        contactPhoto.setPadding(
+            dipToPixels(2.5f),
+            dipToPixels(2.5f),
+            dipToPixels(2.5f),
+            dipToPixels(2.5f)
+        )
+        contactPhoto.scaleType = ImageView.ScaleType.CENTER_CROP
+        contactPhoto.setImageDrawable(getDrawableByName("avatar_contact"))
+        contactPhoto.isClickable = false
+        ReflectionUtils.callMethod(contactPhoto, "setBorderSize", dipToPixels(2.5f).toFloat())
+        ReflectionUtils.callMethod(contactPhoto, "setCornerRadius", dipToPixels(80f).toFloat())
+        ReflectionUtils.setObjectField(contactPhoto, "A02", Color.GRAY)
+        ReflectionUtils.setObjectField(contactPhoto, "A03", getUnSeenColor())
+
+        val addBtnRelativeLayout = RelativeLayout(this.context)
+        addBtnRelativeLayout.setBackgroundColor(Color.TRANSPARENT)
+        val addBtnParams = RelativeLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        )
+        addBtnParams.addRule(RelativeLayout.ALIGN_PARENT_BOTTOM)
+        addBtnParams.addRule(RelativeLayout.ALIGN_PARENT_END)
+        addBtnParams.addRule(RelativeLayout.ALIGN_PARENT_RIGHT)
+        addBtnRelativeLayout.layoutParams = addBtnParams
+        addBtnRelativeLayout.visibility = View.GONE
+
+        val iconImageView = ImageView(this.context)
+        val iconParams = RelativeLayout.LayoutParams(dipToPixels(24), dipToPixels(24))
+        iconImageView.layoutParams = iconParams
+        val icon = getDrawableByName("my_status_add_button_new")
+        val coloredIcon = generatePrimaryColorDrawable(icon)
+        iconImageView.setImageDrawable(coloredIcon ?: icon)
+        iconImageView.setBackgroundColor(Color.TRANSPARENT)
+        addBtnRelativeLayout.addView(iconImageView)
+
+
+        internalRelativeLayout.addView(contactPhoto)
+        internalRelativeLayout.addView(addBtnRelativeLayout)
+
+        val contactName = TextView(this.context)
+        contactName.ellipsize = TextUtils.TruncateAt.END
+        contactName.gravity = Gravity.CENTER
+        val nameParams = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        )
+        contactName.layoutParams = nameParams
+        contactName.text = "Name"
+        contactName.textAlignment = View.TEXT_ALIGNMENT_CENTER
+        contactName.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+        contactName.setTypeface(Typeface.DEFAULT_BOLD)
+        contactName.maxLines = 1
+        linearLayout.addView(internalRelativeLayout)
+        linearLayout.addView(contactName)
+        frameLayout.addView(linearLayout)
+        relativeLayout.addView(frameLayout)
+        return IGStatusViewHolder(relativeLayout, contactPhoto, addBtnRelativeLayout, contactName)
+    }
+
+    private class StatusDiffCallback(
+        private val oldItems: List<Any?>,
+        private val newItems: List<Any?>
+    ) : DiffUtil.Callback() {
+        override fun getOldListSize(): Int = oldItems.size
+
+        override fun getNewListSize(): Int = newItems.size
+
+        override fun areItemsTheSame(oldItemPosition: Int, newItemPosition: Int): Boolean {
+            val oldItem = oldItems[oldItemPosition]
+            val newItem = newItems[newItemPosition]
+            if (oldItem == null || newItem == null) return oldItem == null && newItem == null
+            // WhatsApp creates new objects on every update, but toString() includes the JID
+            return oldItem.toString() == newItem.toString()
+        }
+
+        override fun areContentsTheSame(oldItemPosition: Int, newItemPosition: Int): Boolean {
+            return oldItems[oldItemPosition] === newItems[newItemPosition]
+        }
+    }
+}

@@ -1,0 +1,1274 @@
+package com.wmods.wppenhacer.xposed.features.general
+
+import android.annotation.SuppressLint
+import android.app.Activity
+import android.content.Context
+import android.content.Intent
+import android.content.SharedPreferences
+import android.database.sqlite.SQLiteDatabase
+import android.graphics.BitmapFactory
+import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.Drawable
+import android.graphics.drawable.GradientDrawable
+import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.text.Editable
+import android.text.TextUtils
+import android.text.TextWatcher
+import android.view.Gravity
+import android.view.Menu
+import android.view.MenuItem
+import android.view.View
+import android.view.ViewGroup
+import android.widget.BaseAdapter
+import android.widget.EditText
+import android.widget.FrameLayout
+import android.widget.HorizontalScrollView
+import android.widget.ImageView
+import android.widget.LinearLayout
+import android.widget.ListView
+import android.widget.TextView
+import androidx.core.content.ContextCompat
+import androidx.core.graphics.drawable.RoundedBitmapDrawableFactory
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+import com.highcapable.kavaref.KavaRef.Companion.resolve
+import com.highcapable.yukihookapi.extension.kavaref.hook
+import com.wmods.wppenhacer.R
+import com.wmods.wppenhacer.model.ContactData
+import com.wmods.wppenhacer.model.ContactPickerResult
+import com.wmods.wppenhacer.utils.WhatsAppContactPickerLauncher
+import com.wmods.wppenhacer.xposed.core.Feature
+import com.wmods.wppenhacer.xposed.core.FeatureLoader
+import com.wmods.wppenhacer.xposed.core.WppCore
+import com.wmods.wppenhacer.xposed.core.components.FMessageWpp
+import com.wmods.wppenhacer.xposed.core.components.WaContactWpp
+import com.wmods.wppenhacer.xposed.core.db.MessageStore
+import com.wmods.wppenhacer.xposed.utils.DesignUtils
+import com.wmods.wppenhacer.xposed.utils.ModuleContextWrapper
+import com.wmods.wppenhacer.xposed.utils.ReflectionUtils
+import com.wmods.wppenhacer.xposed.utils.Utils
+import com.wmods.wppenhacer.xposed.utils.YukiLog
+import java.util.Collections
+import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
+
+class AboutContactPicker(loader: ClassLoader, preferences: SharedPreferences) :
+    Feature(loader, preferences) {
+
+    override fun doHook() {
+        val aboutClass = WppCore.aboutActivityClass
+
+        Activity::class.java.resolve().firstMethod {
+            name = "onCreate"
+            superclass()
+            parameters(Bundle::class.java)
+        }.hook {
+            after {
+                val activity = instance as Activity
+                if (!isTargetAboutActivity(
+                        activity,
+                        aboutClass
+                    ) || !isPickerLaunch(activity.intent)
+                ) {
+                    return@after
+                }
+                val controller = getOrCreateController(activity)
+                controller.bindIntent(activity.intent)
+                controller.attach()
+            }
+        }
+
+        Activity::class.java.resolve().firstMethod {
+            name = "onResume"
+            superclass()
+            emptyParameters()
+        }.hook {
+            after {
+                val activity = instance as Activity
+                if (!isTargetAboutActivity(
+                        activity,
+                        aboutClass
+                    ) || !isPickerLaunch(activity.intent)
+                ) {
+                    return@after
+                }
+                val controller = getOrCreateController(activity)
+                controller.bindIntent(activity.intent)
+                activity.window.decorView.post { controller.attach() }
+            }
+        }
+
+        Activity::class.java.resolve().firstMethod {
+            name = "onNewIntent"
+            superclass()
+            parameters(Intent::class.java)
+        }.hook {
+            after {
+                val activity = instance as Activity
+                if (!isTargetAboutActivity(activity, aboutClass)) {
+                    return@after
+                }
+                val intent = args[0] as Intent
+                if (!isPickerLaunch(intent)) {
+                    return@after
+                }
+                activity.intent = intent
+                val controller = getOrCreateController(activity)
+                controller.bindIntent(intent)
+                controller.attach()
+                controller.reloadItems()
+            }
+        }
+
+        Activity::class.java.resolve().firstMethod {
+            name = "onDestroy"
+            superclass()
+            emptyParameters()
+        }.hook {
+            before {
+                val activity = instance as Activity
+                if (!isTargetAboutActivity(activity, aboutClass)) {
+                    return@before
+                }
+                val controller = getController(activity)
+                controller?.destroy()
+                ReflectionUtils.removeAdditionalInstanceField(activity, FIELD_CONTROLLER)
+            }
+        }
+
+        Activity::class.java.resolve().firstMethod {
+            name = "onBackPressed"
+            superclass()
+            emptyParameters()
+        }.hook {
+            before {
+                val activity = instance as Activity
+                if (!isTargetAboutActivity(activity, aboutClass)) {
+                    return@before
+                }
+                val controller = getController(activity)
+                if (controller != null && controller.handleBackPressed()) {
+                    result = null
+                }
+            }
+        }
+
+        Activity::class.java.resolve().firstMethod {
+            name = "onCreateOptionsMenu"
+            superclass()
+            parameters(Menu::class.java)
+        }.hook {
+            before {
+                val activity = instance as Activity
+                if (!isTargetAboutActivity(
+                        activity,
+                        aboutClass
+                    ) || !isPickerLaunch(activity.intent)
+                ) {
+                    return@before
+                }
+                (args[0] as Menu).clear()
+                result = true
+            }
+        }
+
+        Activity::class.java.resolve().firstMethod {
+            name = "onOptionsItemSelected"
+            superclass()
+            parameters(MenuItem::class.java)
+        }.hook {
+            before {
+                val activity = instance as Activity
+                if (!isTargetAboutActivity(
+                        activity,
+                        aboutClass
+                    ) || !isPickerLaunch(activity.intent)
+                ) {
+                    return@before
+                }
+                result = true
+            }
+        }
+    }
+
+    private fun getController(activity: Activity): PickerController? {
+        return ReflectionUtils.getAdditionalInstanceField(
+            activity,
+            FIELD_CONTROLLER
+        ) as? PickerController
+    }
+
+    private fun getOrCreateController(activity: Activity): PickerController {
+        var current = getController(activity)
+        if (current != null) {
+            return current
+        }
+        current = PickerController(activity)
+        ReflectionUtils.setAdditionalInstanceField(activity, FIELD_CONTROLLER, current)
+        return current
+    }
+
+    private fun isPickerLaunch(intent: Intent?): Boolean {
+        return intent?.getBooleanExtra(
+            WhatsAppContactPickerLauncher.EXTRA_PICKER_MODE,
+            false
+        ) == true
+    }
+
+    private fun isTargetAboutActivity(activity: Activity, aboutClass: Class<*>): Boolean {
+        return aboutClass.isAssignableFrom(activity.javaClass)
+    }
+
+    override fun getPluginName(): String {
+        return "About Contact Picker"
+    }
+
+    companion object {
+        private const val FIELD_CONTROLLER = "wae_contact_picker_controller"
+        private const val EXTRA_PICKER_RESULTS = "picker_contacts"
+    }
+
+    private class PickerController(val activity: Activity) {
+
+        val context: Context = runCatching {
+            ModuleContextWrapper(activity)
+        }.getOrElse { activity }
+
+        private val mainHandler = Handler(Looper.getMainLooper())
+        private val allItems = ArrayList<ContactPickerItem>()
+        private val visibleItems = ArrayList<ContactPickerItem>()
+        private val selectedJids = LinkedHashSet<String>()
+        private val avatarCache = ConcurrentHashMap<String, Drawable>()
+        private val avatarLoading = Collections.synchronizedSet(HashSet<String>())
+
+        private var rootView: FrameLayout? = null
+        private var contentView: LinearLayout? = null
+        private var titleView: TextView? = null
+        private var subtitleView: TextView? = null
+        private var searchInput: EditText? = null
+        private var swipeRefreshLayout: SwipeRefreshLayout? = null
+        private var emptyView: TextView? = null
+        private var adapter: ContactPickerAdapter? = null
+        private var filterRunnable: Runnable? = null
+        private var resultKey: String? = null
+        private var filterMode = FilterMode.ALL
+        private var attached = false
+        private var loading = false
+
+        fun getString(resId: Int): String {
+            return runCatching {
+                context.getString(resId)
+            }.getOrElse {
+                runCatching {
+                    FeatureLoader.moduleContext.getString(resId)
+                }.getOrElse {
+                    runCatching { activity.getString(resId) }.getOrDefault("")
+                }
+            }
+        }
+
+        fun getString(resId: Int, vararg formatArgs: Any): String {
+            return runCatching {
+                context.getString(resId, *formatArgs)
+            }.getOrElse {
+                runCatching {
+                    FeatureLoader.moduleContext.getString(resId, *formatArgs)
+                }.getOrElse {
+                    runCatching { activity.getString(resId, *formatArgs) }.getOrDefault("")
+                }
+            }
+        }
+
+        fun getDrawable(resId: Int): Drawable? {
+            return runCatching {
+                ContextCompat.getDrawable(context, resId)
+            }.getOrElse {
+                runCatching {
+                    ContextCompat.getDrawable(FeatureLoader.moduleContext, resId)
+                }.getOrElse {
+                    runCatching { ContextCompat.getDrawable(activity, resId) }.getOrNull()
+                }
+            }
+        }
+
+        fun bindIntent(intent: Intent?) {
+            if (intent == null) return
+            resultKey = intent.getStringExtra("key")
+            selectedJids.clear()
+            intent.getStringArrayListExtra("contacts")?.let {
+                selectedJids.addAll(it)
+            }
+        }
+
+        fun attach() {
+            if (activity.isFinishing || activity.isDestroyed) {
+                return
+            }
+
+            if (rootView == null) {
+                if (!buildRoot()) {
+                    return
+                }
+            }
+
+            val root = rootView ?: return
+            attached = true
+            activity.setContentView(root)
+
+            root.post {
+                checkAndApplyPadding()
+            }
+
+            updateActionBarTitle()
+            if (allItems.isEmpty() && !loading) {
+                reloadItems()
+            } else {
+                applyFilters()
+            }
+        }
+
+        private fun checkAndApplyPadding() {
+            val root = rootView ?: return
+            val content = contentView ?: return
+
+            val location = IntArray(2)
+            root.getLocationOnScreen(location)
+            val viewY = location[1]
+
+            if (viewY > 0) {
+                content.setPadding(0, 0, 0, 0)
+                return
+            }
+            val statusBarHeight = getSystemDimen("status_bar_height", 24f)
+            val navBarHeight = getSystemDimen("navigation_bar_height", 0f)
+            content.setPadding(0, statusBarHeight, 0, navBarHeight)
+        }
+
+        @SuppressLint("InternalInsetResource", "DiscouragedApi")
+        private fun getSystemDimen(name: String, fallbackDp: Float): Int {
+            val resourceId = activity.resources.getIdentifier(name, "dimen", "android")
+            return if (resourceId > 0) {
+                activity.resources.getDimensionPixelSize(resourceId)
+            } else {
+                Utils.dipToPixels(fallbackDp)
+            }
+        }
+
+        private fun buildRoot(): Boolean {
+            return try {
+                val root = FrameLayout(context).apply {
+                    layoutParams = ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT
+                    )
+                    setBackgroundColor(DesignUtils.getPrimarySurfaceColor())
+                }
+
+                val content = LinearLayout(context).apply {
+                    orientation = LinearLayout.VERTICAL
+                    layoutParams = FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT
+                    )
+                    setBackgroundColor(DesignUtils.getPrimarySurfaceColor())
+                }
+
+                content.addView(buildHeader())
+                content.addView(buildSearchField())
+                content.addView(buildFilters())
+
+                val swipeRefresh = SwipeRefreshLayout(context).apply {
+                    setColorSchemeColors(DesignUtils.getUnSeenColor())
+                    setOnRefreshListener { reloadItems() }
+                }
+                swipeRefreshLayout = swipeRefresh
+
+                val adapterInstance = ContactPickerAdapter(this)
+                adapter = adapterInstance
+
+                val listView = ListView(context).apply {
+                    setBackgroundColor(Color.TRANSPARENT)
+                    divider = null
+                    dividerHeight = 0
+                    this.adapter = adapterInstance
+                }
+
+                swipeRefresh.addView(
+                    listView, ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT
+                    )
+                )
+
+                val empty = TextView(context).apply {
+                    gravity = Gravity.CENTER
+                    setTextColor(DesignUtils.getPrimaryTextColor())
+                    textSize = 15f
+                    text = getString(R.string.picker_loading_contacts)
+                    val padding = Utils.dipToPixels(24f)
+                    setPadding(padding, padding, padding, padding)
+                }
+                emptyView = empty
+
+                val listContainer = FrameLayout(context).apply {
+                    layoutParams = LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
+                    )
+                    addView(
+                        swipeRefresh, FrameLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.MATCH_PARENT
+                        )
+                    )
+                    addView(
+                        empty, FrameLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.MATCH_PARENT
+                        )
+                    )
+                }
+
+                content.addView(listContainer)
+                root.addView(content)
+
+                contentView = content
+                rootView = root
+                true
+            } catch (t: Throwable) {
+                YukiLog.log("AboutContactPicker: failed to build root view: $t")
+                YukiLog.log(t)
+                rootView = null
+                false
+            }
+        }
+
+        private fun buildHeader(): View {
+            val header = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(
+                    Utils.dipToPixels(14f), Utils.dipToPixels(14f),
+                    Utils.dipToPixels(14f), Utils.dipToPixels(10f)
+                )
+            }
+
+            val cancelView = buildHeaderAction(R.string.cancel).apply {
+                setOnClickListener { finishCancelled() }
+            }
+
+            val titleContainer = LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                setPadding(Utils.dipToPixels(12f), 0, Utils.dipToPixels(12f), 0)
+            }
+
+            titleView = TextView(context).apply {
+                text = getString(R.string.select_contacts)
+                setTextColor(DesignUtils.getPrimaryTextColor())
+                textSize = 18f
+                typeface = Typeface.DEFAULT_BOLD
+            }
+
+            subtitleView = TextView(context).apply {
+                setTextColor(0xFF8A8A8A.toInt())
+                textSize = 12f
+            }
+
+            titleContainer.addView(titleView)
+            titleContainer.addView(subtitleView)
+
+            val doneView = buildHeaderAction(R.string.yes).apply {
+                typeface = Typeface.DEFAULT_BOLD
+                setOnClickListener { submitSelection() }
+            }
+
+            header.addView(cancelView)
+            header.addView(titleContainer)
+            header.addView(doneView)
+
+            return header
+        }
+
+        private fun buildHeaderAction(textRes: Int): TextView {
+            return TextView(context).apply {
+                text = getString(textRes)
+                setTextColor(DesignUtils.getUnSeenColor())
+                textSize = 15f
+                val padding = Utils.dipToPixels(8f)
+                setPadding(padding, padding, padding, padding)
+            }
+        }
+
+        private fun buildSearchField(): View {
+            searchInput = EditText(context).apply {
+                isSingleLine = true
+                hint = getString(R.string.search_contacts)
+                setTextColor(DesignUtils.getPrimaryTextColor())
+                setHintTextColor(0xFF9A9A9A.toInt())
+                setPadding(
+                    Utils.dipToPixels(14f), Utils.dipToPixels(12f),
+                    Utils.dipToPixels(14f), Utils.dipToPixels(12f)
+                )
+
+                val bg = GradientDrawable().apply {
+                    cornerRadius = Utils.dipToPixels(16f).toFloat()
+                    setColor(if (DesignUtils.isNightMode()) 0xFF182229.toInt() else 0xFFFFFFFF.toInt())
+                }
+                background = bg
+
+                getDrawable(R.drawable.ic_search)?.let { searchDrawable ->
+                    searchDrawable.setTint(DesignUtils.getPrimaryTextColor())
+                    setCompoundDrawablesRelativeWithIntrinsicBounds(
+                        searchDrawable,
+                        null,
+                        null,
+                        null
+                    )
+                    compoundDrawablePadding = Utils.dipToPixels(10f)
+                }
+
+                addTextChangedListener(object : TextWatcher {
+                    override fun beforeTextChanged(
+                        s: CharSequence?,
+                        start: Int,
+                        count: Int,
+                        after: Int
+                    ) {
+                    }
+
+                    override fun onTextChanged(
+                        s: CharSequence?,
+                        start: Int,
+                        before: Int,
+                        count: Int
+                    ) {
+                        scheduleFilterApply()
+                    }
+
+                    override fun afterTextChanged(s: Editable?) {}
+                })
+
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    setMargins(
+                        Utils.dipToPixels(14f),
+                        0,
+                        Utils.dipToPixels(14f),
+                        Utils.dipToPixels(10f)
+                    )
+                }
+            }
+            return searchInput!!
+        }
+
+        private fun buildFilters(): View {
+            val wrapper = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(Utils.dipToPixels(14f), 0, Utils.dipToPixels(14f), Utils.dipToPixels(8f))
+            }
+
+            val scrollView = HorizontalScrollView(context).apply {
+                isHorizontalScrollBarEnabled = false
+                overScrollMode = View.OVER_SCROLL_NEVER
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            }
+
+            val filters = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                addView(buildFilterChip(FilterMode.ALL, R.string.mode_all))
+                addView(buildFilterChip(FilterMode.CONTACTS, R.string.picker_contacts))
+                addView(buildFilterChip(FilterMode.GROUPS, R.string.groups))
+            }
+            scrollView.addView(filters)
+
+            val selectAllView = TextView(context).apply {
+                text = getString(R.string.select_all)
+                setTextColor(DesignUtils.getUnSeenColor())
+                typeface = Typeface.DEFAULT_BOLD
+                setPadding(Utils.dipToPixels(12f), Utils.dipToPixels(8f), 0, Utils.dipToPixels(8f))
+                setOnClickListener { selectAllVisible() }
+            }
+
+            wrapper.addView(scrollView)
+            wrapper.addView(selectAllView)
+            return wrapper
+        }
+
+        private fun buildFilterChip(mode: FilterMode, textRes: Int): TextView {
+            return TextView(context).apply {
+                tag = mode
+                text = getString(textRes)
+                textSize = 13f
+                typeface = Typeface.DEFAULT_BOLD
+                setPadding(
+                    Utils.dipToPixels(14f), Utils.dipToPixels(8f),
+                    Utils.dipToPixels(14f), Utils.dipToPixels(8f)
+                )
+
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    marginEnd = Utils.dipToPixels(8f)
+                }
+
+                setOnClickListener { v ->
+                    filterMode = mode
+                    updateFilterChips(v.parent as? ViewGroup)
+                    applyFilters()
+                }
+                updateFilterChipStyle(this, mode == filterMode)
+            }
+        }
+
+        private fun updateFilterChips(container: ViewGroup?) {
+            if (container == null) return
+            for (i in 0 until container.childCount) {
+                val child = container.getChildAt(i)
+                if (child is TextView) {
+                    updateFilterChipStyle(child, child.tag == filterMode)
+                }
+            }
+        }
+
+        private fun updateFilterChipStyle(chip: TextView, selected: Boolean) {
+            val bg = GradientDrawable().apply {
+                cornerRadius = Utils.dipToPixels(18f).toFloat()
+                setStroke(
+                    Utils.dipToPixels(1f),
+                    if (selected) DesignUtils.getUnSeenColor() else 0x1F888888
+                )
+                setColor(if (selected) (DesignUtils.getUnSeenColor() and 0x22FFFFFF) else Color.TRANSPARENT)
+            }
+            chip.background = bg
+            chip.setTextColor(if (selected) DesignUtils.getUnSeenColor() else DesignUtils.getPrimaryTextColor())
+        }
+
+        private fun scheduleFilterApply() {
+            filterRunnable?.let { mainHandler.removeCallbacks(it) }
+            filterRunnable = Runnable { applyFilters() }
+            mainHandler.postDelayed(filterRunnable!!, 160L)
+        }
+
+        fun reloadItems() {
+            if (!attached || activity.isFinishing || activity.isDestroyed) {
+                stopRefreshing()
+                return
+            }
+            loading = true
+            emptyView?.text = getString(R.string.picker_loading_contacts)
+            emptyView?.visibility = View.VISIBLE
+            swipeRefreshLayout?.isRefreshing = true
+
+            val preservedSelection = LinkedHashSet(selectedJids)
+            Utils.executor.execute {
+                try {
+                    val loadedItems = ContactPickerDataProvider.loadPickerItems(
+                        activity,
+                        ArrayList(preservedSelection)
+                    )
+                    mainHandler.post {
+                        if (activity.isFinishing || activity.isDestroyed) {
+                            stopRefreshing()
+                            return@post
+                        }
+                        allItems.clear()
+                        allItems.addAll(loadedItems)
+                        selectedJids.clear()
+                        for (item in loadedItems) {
+                            if (item.aliases.any(preservedSelection::contains)) {
+                                selectedJids.add(item.jid)
+                            }
+                        }
+                        applyFilters()
+                        stopRefreshing()
+                    }
+                } catch (throwable: Throwable) {
+                    YukiLog.log(throwable)
+                    mainHandler.post {
+                        emptyView?.text = getString(R.string.picker_no_results)
+                        stopRefreshing()
+                    }
+                }
+            }
+        }
+
+        private fun stopRefreshing() {
+            loading = false
+            swipeRefreshLayout?.isRefreshing = false
+        }
+
+        private fun applyFilters() {
+            visibleItems.clear()
+            val query = normalize(searchInput?.text?.toString())
+
+            for (item in allItems) {
+                if (filterMode == FilterMode.CONTACTS && item.type != ContactType.CONTACT) continue
+                if (filterMode == FilterMode.GROUPS && item.type != ContactType.GROUP) continue
+
+                if (query.isNotEmpty()) {
+                    val displayName = normalize(item.displayName)
+                    val waName = normalize(item.waName)
+                    val jid = normalize(item.jid)
+                    if (!displayName.contains(query) && !waName.contains(query) && !jid.contains(
+                            query
+                        )
+                    ) {
+                        continue
+                    }
+                }
+                visibleItems.add(item)
+            }
+
+            visibleItems.sortWith { left, right ->
+                java.lang.Boolean.compare(
+                    selectedJids.contains(right.jid),
+                    selectedJids.contains(left.jid)
+                )
+            }
+
+            adapter?.submit(visibleItems)
+            emptyView?.visibility = if (visibleItems.isEmpty()) View.VISIBLE else View.GONE
+            if (visibleItems.isEmpty()) {
+                emptyView?.text =
+                    getString(if (loading) R.string.picker_loading_contacts else R.string.picker_no_results)
+            }
+            updateActionBarTitle()
+        }
+
+        private fun updateActionBarTitle() {
+            if (titleView == null || subtitleView == null) return
+
+            activity.title = getString(R.string.select_contacts)
+            titleView?.text = getString(R.string.select_contacts)
+
+            if (selectedJids.isEmpty()) {
+                subtitleView?.text = getString(R.string.no_contacts_selected)
+            } else {
+                subtitleView?.text =
+                    getString(R.string.contact_were_selected, selectedJids.size)
+            }
+        }
+
+        fun toggleSelection(item: ContactPickerItem) {
+            if (selectedJids.contains(item.jid)) {
+                selectedJids.remove(item.jid)
+            } else {
+                selectedJids.add(item.jid)
+            }
+            applyFilters()
+            updateActionBarTitle()
+        }
+
+        private fun selectAllVisible() {
+            for (item in visibleItems) {
+                selectedJids.add(item.jid)
+            }
+            applyFilters()
+            updateActionBarTitle()
+        }
+
+        fun isSelected(item: ContactPickerItem): Boolean {
+            return selectedJids.contains(item.jid)
+        }
+
+        fun getAvatar(item: ContactPickerItem): Drawable {
+            val cached = avatarCache[item.jid]
+            if (cached != null) {
+                return cached
+            }
+
+            val placeholder = createAvatarPlaceholder(item)
+            if (avatarLoading.add(item.jid)) {
+                Utils.executor.execute {
+                    val drawable = loadAvatarDrawable(item)
+                    if (drawable != null) {
+                        avatarCache[item.jid] = drawable
+                        mainHandler.post { adapter?.notifyDataSetChanged() }
+                    }
+                    avatarLoading.remove(item.jid)
+                }
+            }
+            return placeholder
+        }
+
+        private fun loadAvatarDrawable(item: ContactPickerItem): Drawable? {
+            return try {
+                val userJid = FMessageWpp.UserJid(item.jid)
+                val waContact = WaContactWpp.getWaContactFromJid(userJid) ?: return null
+
+                waContact.getProfilePhoto(false)?.use { inputStream ->
+                    val bitmap = BitmapFactory.decodeStream(inputStream) ?: return null
+                    RoundedBitmapDrawableFactory.create(activity.resources, bitmap).apply {
+                        isCircular = true
+                    }
+                }
+            } catch (throwable: Throwable) {
+                YukiLog.log(throwable)
+                null
+            }
+        }
+
+        private fun createAvatarPlaceholder(item: ContactPickerItem): Drawable {
+            return GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(if (item.type == ContactType.GROUP) 0xFF6C8F7F.toInt() else 0xFF7C8DA6.toInt())
+            }
+        }
+
+        private fun submitSelection() {
+            val orderedResults = ArrayList<ContactPickerResult>()
+            val contacts = ArrayList<String>()
+            val legacyContacts = ArrayList<ContactData>()
+
+            for (item in allItems) {
+                if (!selectedJids.contains(item.jid)) continue
+
+                val result = ContactPickerResult(item.jid, item.displayName)
+                orderedResults.add(result)
+                contacts.add(item.jid)
+                legacyContacts.add(result.toContactData())
+            }
+
+            val intent = Intent().apply {
+                putStringArrayListExtra("contacts", contacts)
+                putExtra("contacts_data", legacyContacts)
+                putExtra(EXTRA_PICKER_RESULTS, orderedResults)
+                if (resultKey != null) {
+                    putExtra("key", resultKey)
+                }
+            }
+
+            activity.setResult(Activity.RESULT_OK, intent)
+            activity.finish()
+        }
+
+        private fun finishCancelled() {
+            activity.setResult(Activity.RESULT_CANCELED)
+            activity.finish()
+        }
+
+        fun handleBackPressed(): Boolean {
+            finishCancelled()
+            return true
+        }
+
+        fun destroy() {
+            attached = false
+            filterRunnable?.let { mainHandler.removeCallbacks(it) }
+            avatarCache.clear()
+            avatarLoading.clear()
+            rootView = null
+            contentView = null
+            titleView = null
+            subtitleView = null
+            searchInput = null
+            swipeRefreshLayout = null
+            emptyView = null
+            adapter = null
+        }
+
+        private fun normalize(value: String?): String {
+            return value?.trim()?.lowercase(Locale.ROOT) ?: ""
+        }
+    }
+
+    private enum class FilterMode {
+        ALL, CONTACTS, GROUPS
+    }
+
+    private enum class ContactType {
+        CONTACT, GROUP
+    }
+
+    private data class ContactPickerItem(
+        val jid: String,
+        val displayName: String,
+        val waName: String,
+        val type: ContactType,
+        val aliases: Set<String> = setOf(jid)
+    ) {
+        fun typeLabel(context: Context): String {
+            return if (type == ContactType.GROUP) {
+                runCatching { context.getString(R.string.picker_group) }.getOrElse {
+                    runCatching { FeatureLoader.moduleContext.getString(R.string.picker_group) }.getOrDefault(
+                        "Group"
+                    )
+                }
+            } else {
+                runCatching { context.getString(R.string.picker_contact) }.getOrElse {
+                    runCatching { FeatureLoader.moduleContext.getString(R.string.picker_contact) }.getOrDefault(
+                        "Contact"
+                    )
+                }
+            }
+        }
+    }
+
+    private class ContactPickerAdapter(private val controller: PickerController) : BaseAdapter() {
+
+        private val items = ArrayList<ContactPickerItem>()
+
+        @SuppressLint("NotifyDataSetChanged")
+        fun submit(newItems: List<ContactPickerItem>) {
+            items.clear()
+            items.addAll(newItems)
+            notifyDataSetChanged()
+        }
+
+        override fun getCount(): Int = items.size
+
+        override fun getItem(position: Int): ContactPickerItem = items[position]
+
+        override fun getItemId(position: Int): Long {
+            return items[position].jid.hashCode().toLong()
+        }
+
+        override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+            val holder: ViewHolder
+            val view: View
+
+            if (convertView == null) {
+                val context = controller.context
+
+                val root = LinearLayout(context).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(
+                        Utils.dipToPixels(14f), Utils.dipToPixels(12f),
+                        Utils.dipToPixels(14f), Utils.dipToPixels(12f)
+                    )
+                }
+
+                val avatarView = ImageView(context).apply {
+                    layoutParams =
+                        LinearLayout.LayoutParams(Utils.dipToPixels(44f), Utils.dipToPixels(44f))
+                }
+
+                val content = LinearLayout(context).apply {
+                    orientation = LinearLayout.VERTICAL
+                    layoutParams =
+                        LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                            .apply {
+                                setMargins(Utils.dipToPixels(12f), 0, Utils.dipToPixels(12f), 0)
+                            }
+                }
+
+                val title = TextView(context).apply {
+                    setTextColor(DesignUtils.getPrimaryTextColor())
+                    textSize = 16f
+                    typeface = Typeface.DEFAULT_BOLD
+                    maxLines = 1
+                    ellipsize = TextUtils.TruncateAt.END
+                }
+
+                val waName = TextView(context).apply {
+                    setTextColor(0xFF8A8A8A.toInt())
+                    textSize = 13f
+                    maxLines = 1
+                    ellipsize = TextUtils.TruncateAt.END
+                }
+
+                val type = TextView(context).apply {
+                    setTextColor(0xFF6A6A6A.toInt())
+                    textSize = 12f
+                    maxLines = 1
+                    ellipsize = TextUtils.TruncateAt.END
+                }
+
+                content.addView(title)
+                content.addView(waName)
+                content.addView(type)
+
+                val selectionView = ImageView(context).apply {
+                    layoutParams =
+                        LinearLayout.LayoutParams(Utils.dipToPixels(24f), Utils.dipToPixels(24f))
+                }
+
+                root.addView(avatarView)
+                root.addView(content)
+                root.addView(selectionView)
+
+                holder = ViewHolder(root, avatarView, title, waName, type, selectionView)
+                view = root
+                view.tag = holder
+            } else {
+                view = convertView
+                holder = view.tag as ViewHolder
+            }
+
+            val item = items[position]
+            holder.titleView.text = item.displayName
+            holder.waNameView.text = item.waName
+            holder.typeView.text = item.typeLabel(controller.context)
+            holder.avatarView.setImageDrawable(controller.getAvatar(item))
+            holder.selectionView.setImageDrawable(
+                createSelectionDrawable(
+                    controller.isSelected(item)
+                )
+            )
+            holder.itemView.setOnClickListener { controller.toggleSelection(item) }
+
+            return view
+        }
+
+        private fun createSelectionDrawable(checked: Boolean): Drawable {
+            if (checked) {
+                controller.getDrawable(R.drawable.ic_round_check_circle_24)?.let { drawable ->
+                    drawable.mutate().setTint(DesignUtils.getUnSeenColor())
+                    return drawable
+                }
+            }
+            return GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setStroke(
+                    Utils.dipToPixels(2f),
+                    if (checked) DesignUtils.getUnSeenColor() else 0x66888888
+                )
+                setColor(Color.TRANSPARENT)
+            }
+        }
+
+        class ViewHolder(
+            val itemView: View,
+            val avatarView: ImageView,
+            val titleView: TextView,
+            val waNameView: TextView,
+            val typeView: TextView,
+            val selectionView: ImageView
+        )
+    }
+
+    private class JidResolver(private val lidToPhone: Map<String, String>) {
+
+        private val phoneToLid = HashMap<String, String>().apply {
+            for ((lid, phone) in lidToPhone) put(phone, lid)
+        }
+
+        // Prefer the phone JID so selections stay compatible with previously saved values
+        fun canonical(jid: String): String = lidToPhone[jid] ?: jid
+
+        fun aliases(jid: String): Set<String> {
+            val aliases = LinkedHashSet<String>()
+            aliases.add(jid)
+            lidToPhone[jid]?.let { aliases.add(it) }
+            phoneToLid[jid]?.let { aliases.add(it) }
+            return aliases
+        }
+    }
+
+    private object ContactPickerDataProvider {
+
+        fun loadPickerItems(
+            activity: Activity,
+            pinnedJids: List<String>
+        ): ArrayList<ContactPickerItem> {
+            val items = LinkedHashMap<String, ContactPickerItem>()
+            val messageDatabase = try {
+                MessageStore.getInstance().getDatabase()
+            } catch (throwable: Throwable) {
+                YukiLog.log(throwable)
+                null
+            }
+            val resolver = JidResolver(loadLidToPhoneMap(messageDatabase))
+            val waDatabase = WppCore.getWaDatabase()
+
+            if (waDatabase != null) {
+                loadFromAddressBook(items, waDatabase, resolver)
+            }
+            if (messageDatabase != null) {
+                loadFromChats(items, messageDatabase, resolver)
+            }
+            if (waDatabase != null) {
+                loadFromWaContacts(items, waDatabase, resolver)
+            }
+
+            for (jid in pinnedJids) {
+                if (TextUtils.isEmpty(jid) || !isSupportedPickerJid(jid)) continue
+                val canonical = resolver.canonical(jid)
+                if (items.containsKey(canonical)) continue
+                items[canonical] = buildItem(canonical, null, resolver.aliases(canonical) + jid)
+            }
+
+            return ArrayList(items.values.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.displayName }))
+        }
+
+        private fun loadLidToPhoneMap(database: SQLiteDatabase?): Map<String, String> {
+            val map = HashMap<String, String>()
+            if (database == null || !tableExists(database, "jid_map")) return map
+            try {
+                database.rawQuery(
+                    """
+                    SELECT lid.raw_string, phone.raw_string
+                    FROM jid_map
+                    INNER JOIN jid lid ON lid._id = jid_map.lid_row_id
+                    INNER JOIN jid phone ON phone._id = jid_map.jid_row_id
+                    WHERE lid.server = 'lid' AND phone.server = 's.whatsapp.net'
+                    """.trimIndent(), null
+                ).use { cursor ->
+                    while (cursor.moveToNext()) {
+                        val lid = cursor.getString(0) ?: continue
+                        val phone = cursor.getString(1) ?: continue
+                        map[lid] = phone
+                    }
+                }
+            } catch (throwable: Throwable) {
+                YukiLog.log(throwable)
+            }
+            return map
+        }
+
+        // Newer WhatsApp versions moved the address book out of wa_contacts, keyed mostly by @lid
+        private fun loadFromAddressBook(
+            items: LinkedHashMap<String, ContactPickerItem>,
+            database: SQLiteDatabase,
+            resolver: JidResolver
+        ) {
+            if (!tableExists(database, "wa_address_book")) return
+            try {
+                database.rawQuery(
+                    """
+                    SELECT book.jid, book.display_name, contact.wa_name
+                    FROM wa_address_book book
+                    LEFT JOIN wa_contacts contact ON contact.jid = book.jid
+                    WHERE book.is_whatsapp_user = 1 AND book.jid IS NOT NULL AND book.jid != ''
+                    """.trimIndent(), null
+                ).use { cursor ->
+                    while (cursor.moveToNext()) {
+                        addItem(items, cursor.getString(0), cursor.getString(1), cursor.getString(2), resolver)
+                    }
+                }
+            } catch (throwable: Throwable) {
+                YukiLog.log(throwable)
+            }
+        }
+
+        private fun loadFromChats(
+            items: LinkedHashMap<String, ContactPickerItem>,
+            database: SQLiteDatabase,
+            resolver: JidResolver
+        ) {
+            try {
+                database.rawQuery(
+                    """
+                    SELECT jid.raw_string, chat.subject
+                    FROM chat
+                    INNER JOIN jid ON jid._id = chat.jid_row_id
+                    WHERE chat.hidden = 0
+                      AND (jid.server IN ('s.whatsapp.net', 'lid')
+                        OR (jid.server = 'g.us' AND chat.subject IS NOT NULL AND chat.subject != ''))
+                    """.trimIndent(), null
+                ).use { cursor ->
+                    while (cursor.moveToNext()) {
+                        addItem(items, cursor.getString(0), cursor.getString(1), null, resolver)
+                    }
+                }
+            } catch (throwable: Throwable) {
+                YukiLog.log(throwable)
+            }
+        }
+
+        private fun loadFromWaContacts(
+            items: LinkedHashMap<String, ContactPickerItem>,
+            database: SQLiteDatabase,
+            resolver: JidResolver
+        ) {
+            try {
+                database.query(
+                    "wa_contacts",
+                    arrayOf("jid", "display_name", "wa_name"),
+                    "is_whatsapp_user = 1 AND jid IS NOT NULL AND jid != '' AND ((jid LIKE '%@g.us' AND display_name IS NOT NULL AND display_name != '') OR ((jid LIKE '%@s.whatsapp.net' OR jid LIKE '%@lid') AND (raw_contact_id > 0 OR raw_contact_id IN (-2, -3, -5))))",
+                    null, null, null, null
+                ).use { cursor ->
+                    while (cursor.moveToNext()) {
+                        addItem(items, cursor.getString(0), cursor.getString(1), cursor.getString(2), resolver)
+                    }
+                }
+            } catch (throwable: Throwable) {
+                YukiLog.log(throwable)
+            }
+        }
+
+        private fun addItem(
+            items: LinkedHashMap<String, ContactPickerItem>,
+            rawJid: String?,
+            name: String?,
+            waName: String?,
+            resolver: JidResolver
+        ) {
+            if (rawJid.isNullOrEmpty() || !isSupportedPickerJid(rawJid)) return
+            val jid = resolver.canonical(rawJid)
+            if (items.containsKey(jid)) return
+            val aliases = resolver.aliases(jid) + rawJid
+            val resolvedName = sanitize(name)
+            items[jid] = if (resolvedName != null) {
+                val type = if (jid.endsWith("@g.us")) ContactType.GROUP else ContactType.CONTACT
+                ContactPickerItem(jid, resolvedName, sanitize(waName) ?: "", type, aliases)
+            } else {
+                buildItem(jid, sanitize(waName), aliases)
+            }
+        }
+
+        private fun tableExists(database: SQLiteDatabase, table: String): Boolean {
+            return try {
+                database.rawQuery(
+                    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+                    arrayOf(table)
+                ).use { it.moveToFirst() }
+            } catch (throwable: Throwable) {
+                YukiLog.log(throwable)
+                false
+            }
+        }
+
+        private fun buildItem(
+            jid: String,
+            fallbackDisplayName: String?,
+            aliases: Set<String>
+        ): ContactPickerItem {
+            val type = if (jid.endsWith("@g.us")) ContactType.GROUP else ContactType.CONTACT
+
+            var displayName: String? = null
+            var waName: String? = null
+
+            try {
+                WaContactWpp.getWaContactFromJid(FMessageWpp.UserJid(jid))?.let { waContact ->
+                    displayName = sanitize(waContact.displayName)
+                    waName = sanitize(waContact.waName)
+                }
+            } catch (throwable: Throwable) {
+                YukiLog.log(throwable)
+            }
+
+            val resolvedName = displayName
+                ?: sanitize(fallbackDisplayName)
+                ?: waName
+                ?: localPart(jid)
+
+            return ContactPickerItem(jid, resolvedName, waName ?: "", type, aliases)
+        }
+
+        private fun isSupportedPickerJid(jid: String): Boolean {
+            if (!jid.contains("@")) return false
+            if (jid.endsWith("@broadcast") || jid.endsWith("@newsletter") || jid.startsWith("status@")) return false
+            return jid.endsWith("@g.us") || jid.endsWith("@s.whatsapp.net") || jid.endsWith("@lid") || jid.contains(
+                "@lid"
+            )
+        }
+
+        private fun localPart(jid: String): String {
+            val index = jid.indexOf('@')
+            return if (index > 0) jid.substring(0, index) else jid
+        }
+
+        private fun sanitize(value: String?): String? {
+            val trimmed = value?.trim()
+            return if (trimmed.isNullOrEmpty()) null else trimmed
+        }
+    }
+}

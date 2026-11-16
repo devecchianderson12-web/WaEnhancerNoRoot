@@ -1,0 +1,16 @@
+*.iml
+.gradle
+/local.properties
+/.idea/
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+key.jks
+key_base64.txt
+/app/.project
+
+# Generated in CI by scripts/build-engine.sh
+/app/src/main/assets/noroot/engine.jar

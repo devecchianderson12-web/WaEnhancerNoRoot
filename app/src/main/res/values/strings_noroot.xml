@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Modo sin root (parche integrado estilo LSPatch) -->
+    <string name="noroot_title">Modo sin root</string>
+    <string name="noroot_card_title">Activar sin root</string>
+    <string name="noroot_card_summary">Parcheá %1$s para usar todas las funciones sin root ni LSPosed</string>
+    <string name="noroot_open">Abrir</string>
+    <string name="noroot_status_not_installed">%1$s no está instalado</string>
+    <string name="noroot_status_original">%1$s %2$s · sin parchear</string>
+    <string name="noroot_status_patched">%1$s %2$s · parcheado y activo</string>
+    <string name="noroot_status_outdated">%1$s %2$s · parcheado con una versión vieja del módulo</string>
+    <string name="noroot_status_foreign">%1$s %2$s · parcheado por otra herramienta</string>
+    <string name="noroot_engine_missing">Esta compilación no incluye el motor de parcheo. Descargá el APK oficial del release.</string>
+    <string name="noroot_source_installed">Usar la app instalada</string>
+    <string name="noroot_source_file">Elegir APK / APKS / XAPK</string>
+    <string name="noroot_patch">Parchear e instalar</string>
+    <string name="noroot_repatch">Volver a parchear</string>
+    <string name="noroot_working">Parcheando… no cierres la app</string>
+    <string name="noroot_installing">Instalando…</string>
+    <string name="noroot_done">¡Listo! Abrí %1$s y disfrutá las funciones.</string>
+    <string name="noroot_failed">Falló: %1$s</string>
+    <string name="noroot_open_target">Abrir %1$s</string>
+    <string name="noroot_log">Registro</string>
+    <string name="noroot_uninstall_title">Hay que reinstalar %1$s</string>
+    <string name="noroot_uninstall_msg">La versión instalada tiene otra firma y Android no deja reemplazarla directamente.\n\n1. Abrí %1$s → Ajustes → Chats → Copia de seguridad y hacé una copia (local o en Google Drive).\n2. Tocá «Desinstalar».\n3. Volvé acá: la versión parcheada se instala sola y al abrirla restaurás tus chats.</string>
+    <string name="noroot_uninstall">Desinstalar</string>
+    <string name="noroot_cancel">Cancelar</string>
+    <string name="noroot_backup_first">Primero hacé la copia</string>
+    <string name="noroot_install_permission">Permití «Instalar apps desconocidas» para continuar.</string>
+    <string name="noroot_how_title">Cómo funciona</string>
+    <string name="noroot_how_body">El módulo se integra dentro de %1$s junto con el motor de hooks (LSPlant), igual que LSPosed pero sin root: todas las funciones del módulo corren dentro de la app.\n\n• Mantené esta app instalada: guarda tu configuración.\n• Cuando actualices esta app o %1$s, volvé a parchear (no se pierden chats).\n• Para actualizar %1$s, elegí su APK nuevo con «Elegir APK».</string>
+    <string name="noroot_unsupported_version">Atención: la versión %1$s no está en la lista de versiones probadas. Puede que algunas funciones no carguen.</string>
+    <string name="noroot_pick_failed">No se pudo leer el archivo elegido</string>
+    <string name="noroot_no_base">El archivo no contiene un APK de %1$s</string>
+
+    <!-- Actualizaciones de esta app -->
+    <string name="selfupdate_title">Nueva versión disponible</string>
+    <string name="selfupdate_summary">V%1$d lista para instalar · tocá para actualizar</string>
+    <string name="selfupdate_button">Actualizar</string>
+    <string name="selfupdate_downloading">Descargando actualización… %1$d%%</string>
+    <string name="selfupdate_failed">No se pudo actualizar: %1$s</string>
+</resources>

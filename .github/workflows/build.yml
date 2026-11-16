@@ -1,0 +1,91 @@
+name: Build
+
+# Every push to main builds both APKs and replaces the rolling "latest" release.
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      VERSION_CODE: ${{ github.run_number }}
+      UPDATE_REPO: ${{ github.repository }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Set up JDK
+        uses: actions/setup-java@v5.6.0
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: gradle
+          cache-dependency-path: |
+            **/*.gradle*
+            **/gradle-wrapper.properties
+            gradle/libs.versions.toml
+            **/gradle.properties
+
+      - name: Build rootless patch engine (LSPatch → dex)
+        run: bash scripts/build-engine.sh
+
+      - name: Write signing key
+        env:
+          KEY_STORE: ${{ secrets.KEY_STORE }}
+        run: |
+          if [ -n "$KEY_STORE" ]; then
+            echo "androidStorePassword=${{ secrets.KEY_STORE_PASSWORD }}" >> gradle.properties
+            echo "androidKeyAlias=${{ secrets.ALIAS }}" >> gradle.properties
+            echo "androidKeyPassword=${{ secrets.KEY_PASSWORD }}" >> gradle.properties
+            echo "androidStoreFile=key.jks" >> gradle.properties
+            echo "$KEY_STORE" | base64 --decode > key.jks
+          else
+            echo "::warning::KEY_STORE secret missing, APKs are signed with a throwaway debug key"
+          fi
+
+      - name: Build APKs
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleWhatsappRelease assembleBusinessRelease
+
+      - name: Publish release
+        run: |
+          N="${{ github.run_number }}"
+          mkdir -p dist
+          cp app/build/outputs/apk/whatsapp/release/WaEnhancerNoRoot-V$N.apk dist/
+          cp app/build/outputs/apk/business/release/WaEnhancerNoRoot-Business-V$N.apk dist/
+          {
+            echo "## WaEnhancer Sin Root V$N"
+            echo
+            echo "Commit: ${GITHUB_SHA::8}"
+            echo
+            echo "- **WaEnhancerNoRoot-V$N.apk** → para WhatsApp"
+            echo "- **WaEnhancerNoRoot-Business-V$N.apk** → para WhatsApp Business"
+            echo
+            echo "Instalá el APK, abrí la app, tocá **Activar sin root** → **Parchear e instalar**."
+            echo
+            cat changelog.txt
+          } > dist/notes.md
+          gh release delete latest --cleanup-tag --yes || true
+          gh release create latest dist/*.apk \
+            --target "$GITHUB_SHA" \
+            --title "WaEnhancerNoRoot V$N" \
+            --notes-file dist/notes.md \
+            --latest
+
+      - name: Upload ProGuard mappings
+        uses: actions/upload-artifact@v7
+        with:
+          name: mappings-V${{ github.run_number }}
+          path: app/build/outputs/mapping/**/mapping.txt
