@@ -32,13 +32,17 @@ PLATFORM="$(ls "$ANDROID_HOME/platforms" | sort -V | tail -1)"
 D8="$ANDROID_HOME/build-tools/$BUILD_TOOLS/d8"
 echo "Using build-tools $BUILD_TOOLS and $PLATFORM"
 
-# Multi-release and module descriptors are JVM-only and confuse d8.
 cp "$WORK/lspatch.jar" "$WORK/in.jar"
-zip -q -d "$WORK/in.jar" 'META-INF/versions/*' 'module-info.class' '*/module-info.class' >/dev/null 2>&1 || true
+
+# d8 gets only the bytecode: the jar also carries prebuilt .dex payloads (the loader) that it
+# refuses to mix with class files. Multi-release and module descriptors are JVM-only.
+mkdir -p "$WORK/classes"
+(cd "$WORK/classes" && unzip -q "$WORK/in.jar" '*.class' -x 'META-INF/*' '*module-info.class')
+(cd "$WORK/classes" && zip -q -r "$WORK/classes.jar" .)
 
 "$D8" --release --min-api 28 \
   --lib "$ANDROID_HOME/platforms/$PLATFORM/android.jar" \
-  --output "$WORK/dex.zip" "$WORK/in.jar"
+  --output "$WORK/dex.zip" "$WORK/classes.jar"
 
 # Put the non-class resources (the loader payload and the patcher's assets) next to the dex.
 mkdir -p "$WORK/res"
