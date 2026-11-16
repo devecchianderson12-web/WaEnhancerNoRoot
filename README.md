@@ -18,6 +18,20 @@ En [Releases](../../releases/latest) siempre está la última compilación:
 | `WaEnhancerNoRoot-V<n>.apk` | WhatsApp |
 | `WaEnhancerNoRoot-Business-V<n>.apk` | WhatsApp Business |
 
+## Modo sin parche (WhatsApp oficial, sin reinstalar)
+
+Si no querés tocar WhatsApp, en **Inicio → Sin parche · WhatsApp oficial** hay funciones que trabajan
+junto al WhatsApp de Play Store, que se sigue actualizando normal:
+
+- **Leer sin tildes azules**: los mensajes se guardan desde las notificaciones y se leen en esta app.
+- **Mensajes eliminados y editados**: si alguien borra o edita un mensaje, queda la copia y te avisa.
+- **Guardar estados**: los estados que WhatsApp ya descargó se copian a la galería.
+
+Solo pide **acceso a notificaciones** y **acceso a archivos** (para los estados). Ve únicamente lo que
+WhatsApp muestra en la notificación: no funciona con chats silenciados ni con el chat abierto, y de las
+fotos o audios guarda solo la descripción. Ocultar «en línea», ver una vez y el resto de las funciones
+necesitan el modo con parche (abajo) o root, porque Android no deja meter código en otra app sin modificarla.
+
 ## Cómo usarlo (sin root)
 
 1. Instalá el APK y abrilo.

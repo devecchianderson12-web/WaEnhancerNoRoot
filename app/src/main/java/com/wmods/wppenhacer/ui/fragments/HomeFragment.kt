@@ -32,6 +32,9 @@ import com.wmods.wppenhacer.databinding.DialogDiagnosticsLogBinding
 import com.wmods.wppenhacer.databinding.FragmentHomeBinding
 import com.wmods.wppenhacer.noroot.AppUpdater
 import com.wmods.wppenhacer.noroot.NoRootActivity
+import com.wmods.wppenhacer.nopatch.NoPatch
+import com.wmods.wppenhacer.nopatch.NoPatchActivity
+import com.wmods.wppenhacer.nopatch.NoPatchStore
 import com.wmods.wppenhacer.noroot.NoRootManager
 import com.wmods.wppenhacer.ui.fragments.base.BaseFragment
 import com.wmods.wppenhacer.utils.FilePicker
@@ -134,6 +137,13 @@ class HomeFragment : BaseFragment() {
         binding.norootCard.setOnClickListener(openNoRoot)
         binding.norootBtn.setOnClickListener(openNoRoot)
 
+        val openNoPatch = View.OnClickListener { view ->
+            animateClick(view)
+            startActivity(Intent(requireContext(), NoPatchActivity::class.java))
+        }
+        binding.nopatchCard.setOnClickListener(openNoPatch)
+        binding.nopatchBtn.setOnClickListener(openNoPatch)
+
         binding.diagBtn.setOnClickListener { view ->
             animateClick(view)
             showDiagnosticsDialog()
@@ -186,6 +196,22 @@ class HomeFragment : BaseFragment() {
         setDisplayHomeAsUpEnabled(false)
         updatePackageStatuses(requireContext())
         updateModuleStatus()
+        updateNoPatchCard()
+    }
+
+    private fun updateNoPatchCard() {
+        val context = context ?: return
+        if (!NoPatch.hasNotificationAccess(context)) {
+            binding.nopatchContainer.setBackgroundResource(R.drawable.gradient_primary)
+            binding.nopatchSummary.setText(R.string.nopatch_card_summary)
+            return
+        }
+        binding.nopatchContainer.setBackgroundResource(R.drawable.gradient_success)
+        lifecycleScope.launch {
+            val deleted = withContext(Dispatchers.IO) { NoPatchStore.get(context).deletedCount() }
+            if (_binding == null) return@launch
+            binding.nopatchSummary.text = getString(R.string.nopatch_card_summary_on, deleted)
+        }
     }
 
     private fun receiverBroadcastBusiness(context: Context, intent: Intent) {

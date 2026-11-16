@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Modo sin parche: funciones junto al WhatsApp oficial, sin reinstalarlo -->
+    <string name="nopatch_title">Modo sin parche</string>
+    <string name="nopatch_card_title">Sin parche · WhatsApp oficial</string>
+    <string name="nopatch_card_summary">Mensajes eliminados, leer sin tildes azules y estados, sin reinstalar WhatsApp</string>
+    <string name="nopatch_card_summary_on">Activo · %1$d mensajes eliminados recuperados</string>
+    <string name="nopatch_listener_label">Mensajes de WhatsApp (WaEnhancer)</string>
+    <string name="nopatch_status_off">Falta un permiso</string>
+    <string name="nopatch_status_off_summary">Dale a esta app acceso a las notificaciones para guardar los mensajes de WhatsApp.</string>
+    <string name="nopatch_status_on">Activo con el WhatsApp oficial</string>
+    <string name="nopatch_status_on_summary">%1$d mensajes eliminados recuperados</string>
+    <string name="nopatch_grant_notifications">Permitir acceso a notificaciones</string>
+    <string name="nopatch_grant_alerts">Permitir avisos de esta app</string>
+    <string name="nopatch_open_settings_failed">No se pudo abrir los ajustes. Buscalo a mano en Ajustes de Android.</string>
+    <string name="nopatch_switch_capture">Guardar mensajes de las notificaciones</string>
+    <string name="nopatch_switch_deleted">Avisarme cuando borren un mensaje</string>
+    <string name="nopatch_switch_edited">Avisarme cuando editen un mensaje</string>
+    <string name="nopatch_open_messages">Leer mensajes (sin tildes azules)</string>
+    <string name="nopatch_open_deleted">Mensajes eliminados</string>
+    <string name="nopatch_open_statuses">Guardar estados</string>
+    <string name="nopatch_how_body">Este modo no toca WhatsApp: sigue siendo el oficial y se actualiza normal desde Play Store.\n\n• Los mensajes se guardan desde las notificaciones. Leerlos acá no marca el chat como leído.\n• Si alguien borra un mensaje, queda guardado y te avisa. Lo mismo con los mensajes editados.\n• Los estados que WhatsApp ya descargó (los que abriste) se pueden guardar en la galería.\n\nLímites: solo ve lo que WhatsApp muestra en la notificación. No funciona con chats silenciados, con el chat abierto en pantalla ni con fotos o audios (solo su descripción). Ocultar «en línea», «escribiendo», ver una vez y el resto de las funciones necesitan el modo con parche o root.</string>
+    <string name="nopatch_me">Tú</string>
+    <string name="nopatch_channel_deleted">Mensajes eliminados o editados</string>
+    <string name="nopatch_alert_deleted">%1$s eliminó un mensaje · %2$s</string>
+    <string name="nopatch_alert_edited">%1$s editó un mensaje · %2$s</string>
+    <string name="nopatch_alert_edited_body">Antes: %1$s\nAhora: %2$s</string>
+    <string name="nopatch_badge_deleted">Eliminado</string>
+    <string name="nopatch_badge_edited">Editado</string>
+    <string name="nopatch_badge_deleted_count">%1$d eliminados</string>
+    <string name="nopatch_before_edit">Antes: %1$s</string>
+    <string name="nopatch_empty_messages">Todavía no hay mensajes. Aparecen acá cuando te llega una notificación de WhatsApp.</string>
+    <string name="nopatch_clear">Borrar</string>
+    <string name="nopatch_clear_confirm">¿Borrar los mensajes guardados? En WhatsApp no se borra nada.</string>
+    <string name="nopatch_delete_chat">¿Borrar los mensajes guardados de este chat?</string>
+    <string name="nopatch_copied">Mensaje copiado</string>
+    <string name="nopatch_refresh">Actualizar</string>
+    <string name="nopatch_statuses_permission">Para ver los estados hace falta acceso a archivos. Tocá acá para darlo.</string>
+    <string name="nopatch_statuses_empty">No hay estados. Abrí los estados en WhatsApp para que se descarguen y volvé acá.</string>
+    <string name="nopatch_save">Guardar</string>
+    <string name="nopatch_save_image">¿Guardar esta foto?</string>
+    <string name="nopatch_save_video">¿Guardar este video?</string>
+    <string name="nopatch_status_saved">Guardado en %1$s</string>
+</resources>

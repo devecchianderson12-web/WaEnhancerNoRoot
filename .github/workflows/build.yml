@@ -1,9 +1,10 @@
 name: Build
 
 # Every push to main builds both APKs and replaces the rolling "latest" release.
+# Pushes to claude/** branches only build, to check the code compiles.
 on:
   push:
-    branches: [ main ]
+    branches: [ main, 'claude/**' ]
   workflow_dispatch:
 
 permissions:
@@ -60,6 +61,7 @@ jobs:
           ./gradlew --no-daemon assembleWhatsappRelease assembleBusinessRelease
 
       - name: Publish release
+        if: github.ref == 'refs/heads/main'
         run: |
           N="${{ github.run_number }}"
           mkdir -p dist
