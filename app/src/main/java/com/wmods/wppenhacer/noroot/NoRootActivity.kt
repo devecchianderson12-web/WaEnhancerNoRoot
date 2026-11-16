@@ -24,7 +24,7 @@ class NoRootActivity : BaseActivity() {
     private var busy = false
 
     private val pickApk = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) startPatch(uri)
+        if (uri != null) confirmPatch { startPatch(uri) }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -37,7 +37,7 @@ class NoRootActivity : BaseActivity() {
         binding.howText.text = getString(R.string.noroot_how_body, label)
         binding.openButton.text = getString(R.string.noroot_open_target, label)
 
-        binding.patchButton.setOnClickListener { startPatch(null) }
+        binding.patchButton.setOnClickListener { confirmPatch { startPatch(null) } }
         binding.pickButton.setOnClickListener {
             if (!ensureInstallPermission()) return@setOnClickListener
             runCatching { pickApk.launch(arrayOf("*/*")) }
@@ -197,6 +197,30 @@ class NoRootActivity : BaseActivity() {
             }
 
             else -> fail(result.message ?: "status ${result.status}")
+        }
+    }
+
+    /**
+     * Patching re-signs WhatsApp: it may refuse to register the account and Google Drive
+     * backups can't be restored. Warn before the first install, when the official one is there.
+     */
+    private fun confirmPatch(action: () -> Unit) {
+        lifecycleScope.launch {
+            val state = withContext(Dispatchers.IO) { NoRootManager.inspect(this@NoRootActivity) }
+            if (state.status != NoRootManager.Status.ORIGINAL && state.status != NoRootManager.Status.NOT_INSTALLED) {
+                action()
+                return@launch
+            }
+            MaterialAlertDialogBuilder(this@NoRootActivity)
+                .setTitle(R.string.noroot_risk_title)
+                .setMessage(getString(R.string.noroot_risk_msg, NoRootManager.targetLabel(this@NoRootActivity)))
+                .setPositiveButton(R.string.noroot_risk_nopatch) { _, _ ->
+                    startActivity(android.content.Intent(this@NoRootActivity, com.wmods.wppenhacer.nopatch.NoPatchActivity::class.java))
+                    finish()
+                }
+                .setNeutralButton(R.string.noroot_risk_continue) { _, _ -> action() }
+                .setNegativeButton(R.string.noroot_cancel, null)
+                .show()
         }
     }
 

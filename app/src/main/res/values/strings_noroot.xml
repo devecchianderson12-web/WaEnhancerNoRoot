@@ -30,6 +30,10 @@
     <string name="noroot_how_title">Cómo funciona</string>
     <string name="noroot_how_body">El módulo se integra dentro de %1$s junto con el motor de hooks (LSPlant), igual que LSPosed pero sin root: todas las funciones del módulo corren dentro de la app.\n\n• Mantené esta app instalada: guarda tu configuración.\n• Cuando actualices esta app o %1$s, volvé a parchear (no se pierden chats).\n• Para actualizar %1$s, elegí su APK nuevo con «Elegir APK».</string>
     <string name="noroot_unsupported_version">Atención: la versión %1$s no está en la lista de versiones probadas. Puede que algunas funciones no carguen.</string>
+    <string name="noroot_risk_title">Antes de parchear</string>
+    <string name="noroot_risk_msg">El %1$s parcheado lleva otra firma. Puede pasar que:\n\n• WhatsApp no te deje registrar tu número.\n• No puedas restaurar la copia de Google Drive (Google solo se la da al WhatsApp original).\n\nSi no tenés root, lo más seguro es el modo sin parche: funciona con el WhatsApp oficial, sin reinstalarlo.</string>
+    <string name="noroot_risk_nopatch">Usar modo sin parche</string>
+    <string name="noroot_risk_continue">Parchear igual</string>
     <string name="noroot_pick_failed">No se pudo leer el archivo elegido</string>
     <string name="noroot_no_base">El archivo no contiene un APK de %1$s</string>
 
